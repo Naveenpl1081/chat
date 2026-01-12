@@ -1,0 +1,22 @@
+{
+  "name": "chat-bot-application-npl",
+  "version": "1.0.0",
+  "description": "This project contains source code and supporting files for a serverless application that you can deploy with the SAM CLI. It includes the following files and folders.",
+  "license": "ISC",
+  "author": "",
+  "type": "commonjs",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {
+    "@aws-sdk/client-apigatewaymanagementapi": "^3.966.0",
+    "@aws-sdk/client-dynamodb": "^3.966.0",
+    "@aws-sdk/lib-dynamodb": "^3.966.0"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.159",
+    "esbuild": "^0.27.2",
+    "typescript": "^5.9.3"
+  }
+}
