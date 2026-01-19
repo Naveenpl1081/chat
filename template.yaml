@@ -1,6 +1,6 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
-Description: WebSocket Chat with esbuild and TypeScript
+Description: WebSocket Chat with TypeScript + esbuild
 
 Globals:
   Function:
@@ -12,10 +12,14 @@ Globals:
 
 Resources:
 
+  #################################
+  # DynamoDB Table
+  #################################
   ChatConnectionsTable:
     Type: AWS::DynamoDB::Table
     Properties:
       TableName: ChatConnections
+      BillingMode: PAY_PER_REQUEST
       AttributeDefinitions:
         - AttributeName: groupId
           AttributeType: S
@@ -26,9 +30,10 @@ Resources:
           KeyType: HASH
         - AttributeName: connectionId
           KeyType: RANGE
-      BillingMode: PAY_PER_REQUEST
 
+  #################################
   # WebSocket API
+  #################################
   ChatWebSocketApi:
     Type: AWS::ApiGatewayV2::Api
     Properties:
@@ -36,83 +41,85 @@ Resources:
       ProtocolType: WEBSOCKET
       RouteSelectionExpression: "$request.body.action"
 
-  # Lambda Function with esbuild
+  #################################
+  # Lambda Function
+  #################################
   ChatLambdaFunction:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: src/
-      Handler: app.handler
+      Handler: handler.handler
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref ChatConnectionsTable
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref ChatConnectionsTable
         - Statement:
             - Effect: Allow
               Action:
-                - 'execute-api:ManageConnections'
+                - execute-api:ManageConnections
               Resource:
-                - !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ChatWebSocketApi}/*'
-      Environment:
-        Variables:
-          TABLE_NAME: !Ref ChatConnectionsTable
+                - !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ChatWebSocketApi}/*
+
     Metadata:
       BuildMethod: esbuild
       BuildProperties:
-        Minify: false
         Target: es2020
+        Minify: false
         Sourcemap: false
         EntryPoints:
-          - app.ts
+          - handler.ts
 
+  #################################
   # Lambda Permission
+  #################################
   ChatLambdaPermission:
     Type: AWS::Lambda::Permission
     Properties:
       FunctionName: !Ref ChatLambdaFunction
       Action: lambda:InvokeFunction
       Principal: apigateway.amazonaws.com
-      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ChatWebSocketApi}/*'
+      SourceArn: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ChatWebSocketApi}/*
 
-  # Lambda Integration
+  #################################
+  # API Integration
+  #################################
   ChatLambdaIntegration:
     Type: AWS::ApiGatewayV2::Integration
     Properties:
       ApiId: !Ref ChatWebSocketApi
       IntegrationType: AWS_PROXY
-      IntegrationUri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ChatLambdaFunction.Arn}/invocations'
+      IntegrationUri: !Sub arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ChatLambdaFunction.Arn}/invocations
 
+  #################################
   # Routes
+  #################################
   ConnectRoute:
     Type: AWS::ApiGatewayV2::Route
     Properties:
       ApiId: !Ref ChatWebSocketApi
       RouteKey: $connect
       AuthorizationType: NONE
-      Target: !Join 
-        - '/'
-        - - integrations
-          - !Ref ChatLambdaIntegration
+      Target: !Join [ "/", [ "integrations", !Ref ChatLambdaIntegration ] ]
 
   DisconnectRoute:
     Type: AWS::ApiGatewayV2::Route
     Properties:
       ApiId: !Ref ChatWebSocketApi
       RouteKey: $disconnect
-      Target: !Join 
-        - '/'
-        - - integrations
-          - !Ref ChatLambdaIntegration
+      Target: !Join [ "/", [ "integrations", !Ref ChatLambdaIntegration ] ]
 
   SendRoute:
     Type: AWS::ApiGatewayV2::Route
     Properties:
       ApiId: !Ref ChatWebSocketApi
       RouteKey: sendMessage
-      Target: !Join 
-        - '/'
-        - - integrations
-          - !Ref ChatLambdaIntegration
+      Target: !Join [ "/", [ "integrations", !Ref ChatLambdaIntegration ] ]
 
-  # Deployment
+  #################################
+  # Deployment & Stage
+  #################################
   Deployment:
     Type: AWS::ApiGatewayV2::Deployment
     DependsOn:
@@ -122,7 +129,6 @@ Resources:
     Properties:
       ApiId: !Ref ChatWebSocketApi
 
-  # Stage
   Stage:
     Type: AWS::ApiGatewayV2::Stage
     Properties:
@@ -130,15 +136,18 @@ Resources:
       DeploymentId: !Ref Deployment
       ApiId: !Ref ChatWebSocketApi
 
+#################################
+# Outputs
+#################################
 Outputs:
   WebSocketURL:
-    Description: "WebSocket URL for your React app"
-    Value: !Sub "wss://${ChatWebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/prod"
-  
+    Description: WebSocket URL
+    Value: !Sub wss://${ChatWebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/prod
+
   TableName:
-    Description: "DynamoDB Table Name"
+    Description: DynamoDB Table Name
     Value: !Ref ChatConnectionsTable
-  
+
   LambdaFunctionName:
-    Description: "Lambda Function Name"
+    Description: Lambda Function Name
     Value: !Ref ChatLambdaFunction
